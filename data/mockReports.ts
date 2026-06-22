@@ -1,0 +1,50 @@
+import type { Report } from "@/types";
+
+export const mockReports: Report[] = [
+  {
+    id: "rep_01",
+    title: "Monthly Teacher Progress — May 2026",
+    scope: "school",
+    schoolId: "sch_01",
+    requestedBy: "u_admin_01",
+    requestedAt: "2026-06-01T09:00:00Z",
+    status: "ready",
+    readyAt: "2026-06-01T09:04:00Z",
+  },
+  {
+    id: "rep_02",
+    title: "AI Usage Summary — Q2 2026",
+    scope: "school",
+    schoolId: "sch_01",
+    requestedBy: "u_admin_01",
+    requestedAt: "2026-06-15T11:00:00Z",
+    status: "ready",
+    readyAt: "2026-06-15T11:08:00Z",
+  },
+  {
+    id: "rep_03",
+    title: "Lesson Completion Audit",
+    scope: "school",
+    schoolId: "sch_01",
+    requestedBy: "u_admin_01",
+    requestedAt: "2026-06-22T08:30:00Z",
+    status: "processing",
+  },
+  {
+    id: "rep_04",
+    title: "Global Platform Health — June 2026",
+    scope: "global",
+    requestedBy: "u_super_01",
+    requestedAt: "2026-06-20T07:00:00Z",
+    status: "ready",
+    readyAt: "2026-06-20T07:11:00Z",
+  },
+  {
+    id: "rep_05",
+    title: "Failed Logins Investigation",
+    scope: "global",
+    requestedBy: "u_super_01",
+    requestedAt: "2026-06-21T18:00:00Z",
+    status: "failed",
+  },
+];

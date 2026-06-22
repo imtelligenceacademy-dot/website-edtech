@@ -1,0 +1,126 @@
+import type { User } from "@/types";
+
+export const mockUsers: User[] = [
+  // Super admin
+  {
+    id: "u_super_01",
+    name: "Georgio Naoum",
+    email: "georgio@im-telligence.com",
+    role: "super-admin",
+    status: "active",
+    createdAt: "2024-08-01",
+    lastLoginAt: "2026-06-22T08:14:00Z",
+  },
+  // School admins
+  {
+    id: "u_admin_01",
+    name: "Rania Khoury",
+    email: "rania@antonine.edu.lb",
+    role: "school-admin",
+    schoolId: "sch_01",
+    status: "active",
+    createdAt: "2024-09-05",
+    lastLoginAt: "2026-06-21T16:42:00Z",
+  },
+  {
+    id: "u_admin_02",
+    name: "Marc Saliba",
+    email: "marc@cedars.edu.lb",
+    role: "school-admin",
+    schoolId: "sch_02",
+    status: "active",
+    createdAt: "2024-10-15",
+  },
+  {
+    id: "u_admin_03",
+    name: "Layla Hajj",
+    email: "layla@medstem.edu.lb",
+    role: "school-admin",
+    schoolId: "sch_03",
+    status: "active",
+    createdAt: "2025-01-22",
+  },
+  // Teachers
+  {
+    id: "u_tea_01",
+    name: "Nour Abboud",
+    email: "nour@antonine.edu.lb",
+    role: "teacher",
+    schoolId: "sch_01",
+    status: "active",
+    createdAt: "2024-09-10",
+    lastLoginAt: "2026-06-22T07:30:00Z",
+  },
+  {
+    id: "u_tea_02",
+    name: "Sami Daher",
+    email: "sami@antonine.edu.lb",
+    role: "teacher",
+    schoolId: "sch_01",
+    status: "active",
+    createdAt: "2024-09-11",
+    lastLoginAt: "2026-06-20T10:15:00Z",
+  },
+  {
+    id: "u_tea_03",
+    name: "Maya Tabet",
+    email: "maya@antonine.edu.lb",
+    role: "teacher",
+    schoolId: "sch_01",
+    status: "active",
+    createdAt: "2024-09-12",
+  },
+  {
+    id: "u_tea_04",
+    name: "Karim Mansour",
+    email: "karim@cedars.edu.lb",
+    role: "teacher",
+    schoolId: "sch_02",
+    status: "active",
+    createdAt: "2024-10-20",
+  },
+  {
+    id: "u_tea_05",
+    name: "Yara Fares",
+    email: "yara@medstem.edu.lb",
+    role: "teacher",
+    schoolId: "sch_03",
+    status: "active",
+    createdAt: "2025-02-01",
+  },
+  // Pending signups
+  {
+    id: "u_pen_01",
+    name: "Joseph Haddad",
+    email: "joseph@phoenicia.edu.lb",
+    role: "teacher",
+    schoolId: "sch_04",
+    status: "pending",
+    createdAt: "2026-06-19",
+  },
+  {
+    id: "u_pen_02",
+    name: "Tala Geagea",
+    email: "tala@phoenicia.edu.lb",
+    role: "teacher",
+    schoolId: "sch_04",
+    status: "pending",
+    createdAt: "2026-06-20",
+  },
+  {
+    id: "u_pen_03",
+    name: "Roy Chahine",
+    email: "roy@cedars.edu.lb",
+    role: "school-admin",
+    schoolId: "sch_02",
+    status: "pending",
+    createdAt: "2026-06-21",
+  },
+];
+
+// Demo accounts shown on the login screen for quick role testing.
+export const demoAccounts = [
+  { role: "super-admin" as const, userId: "u_super_01", label: "Super Admin (Georgio)" },
+  { role: "school-admin" as const, userId: "u_admin_01", label: "School Admin — Antonine" },
+  { role: "teacher" as const, userId: "u_tea_01", label: "Teacher — Nour (Antonine)" },
+];

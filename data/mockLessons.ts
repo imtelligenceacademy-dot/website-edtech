@@ -1,0 +1,98 @@
+import type { Lesson } from "@/types";
+
+const makeSlides = (titles: string[]) =>
+  titles.map((t, i) => ({
+    id: `s_${i + 1}`,
+    index: i + 1,
+    title: t,
+    body: `This is the body of slide ${i + 1}. In production, this slide is rendered from a PPTX file uploaded by Super Admin and assigned to this teacher.`,
+  }));
+
+export const mockLessons: Lesson[] = [
+  {
+    id: "les_01",
+    title: "Introduction to Robotics",
+    grade: 5,
+    subject: "STEAM",
+    schoolId: "sch_01",
+    assignedTeacherIds: ["u_tea_01", "u_tea_02"],
+    dueDate: "2026-06-25",
+    createdBy: "u_super_01",
+    slides: makeSlides([
+      "What is a Robot?",
+      "Parts of a Robot",
+      "Sensors and Actuators",
+      "Meet Volt — Our Robot Mascot",
+      "Building Your First Circuit",
+      "Wrap-up & Quiz",
+    ]),
+  },
+  {
+    id: "les_02",
+    title: "Block-Based Coding Basics",
+    grade: 4,
+    subject: "Coding",
+    schoolId: "sch_01",
+    assignedTeacherIds: ["u_tea_01", "u_tea_03"],
+    dueDate: "2026-06-23",
+    createdBy: "u_super_01",
+    slides: makeSlides([
+      "Why Code?",
+      "Sequences",
+      "Loops",
+      "Conditionals",
+      "Mini Project: Maze Runner",
+    ]),
+  },
+  {
+    id: "les_03",
+    title: "AI for Kids — Pattern Recognition",
+    grade: 6,
+    subject: "AI",
+    schoolId: "sch_01",
+    assignedTeacherIds: ["u_tea_01"],
+    dueDate: "2026-07-02",
+    createdBy: "u_super_01",
+    slides: makeSlides([
+      "What is AI?",
+      "Patterns Around Us",
+      "Training a Model (Simply)",
+      "Ethics of AI",
+      "Activity: Teach the Machine",
+    ]),
+  },
+  {
+    id: "les_04",
+    title: "3D Design Fundamentals",
+    grade: 6,
+    subject: "STEAM",
+    schoolId: "sch_02",
+    assignedTeacherIds: ["u_tea_04"],
+    dueDate: "2026-06-28",
+    createdBy: "u_super_01",
+    slides: makeSlides([
+      "What is 3D Design?",
+      "Tinkercad Tour",
+      "Your First Shape",
+      "Combine and Subtract",
+      "Print-Ready Models",
+    ]),
+  },
+  {
+    id: "les_05",
+    title: "IoT Concepts for Grade 7",
+    grade: 7,
+    subject: "AI",
+    schoolId: "sch_03",
+    assignedTeacherIds: ["u_tea_05"],
+    dueDate: "2026-07-10",
+    createdBy: "u_super_01",
+    slides: makeSlides([
+      "Connected Things",
+      "Sensors in Daily Life",
+      "Cloud Basics",
+      "Privacy & Security",
+      "Project Ideas",
+    ]),
+  },
+];
