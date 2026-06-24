@@ -41,8 +41,6 @@ const navByRole: Record<Role, NavItem[]> = {
     { href: "/school-admin/security", label: "Security Alerts", icon: AlertTriangle },
   ],
   teacher: [
-    { href: "/teacher/home", label: "Home", icon: Home },
-    { href: "/teacher/lessons", label: "My Lessons", icon: BookOpen },
     { href: "/teacher/ai", label: "AI Assistant", icon: Sparkles },
     { href: "/teacher/progress", label: "Progress", icon: TrendingUp },
   ],

@@ -44,6 +44,7 @@ export interface Slide {
   index: number;
   title: string;
   body: string;
+  imageUrl?: string;
 }
 
 export type WatchdogStatus = "on-track" | "late" | "not-opened" | "completed" | "needs-attention";
