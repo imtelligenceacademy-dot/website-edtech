@@ -11,6 +11,8 @@ export interface User {
   role: Role;
   schoolId?: string;
   status: UserStatus;
+  grades?: string[]; // teacher grade tokens, e.g. ["KG1","G1"]
+  language?: "en" | "fr" | "both" | null; // teacher language of instruction
   createdAt: string;
   lastLoginAt?: string;
 }
@@ -22,10 +24,12 @@ export interface School {
   city: string;
   teacherCount: number;
   adminCount: number;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export type LessonStatus = "not-started" | "in-progress" | "completed" | "late";
+
+export type LessonAccessStatus = "available" | "completed" | "waiting" | "locked";
 
 export interface Lesson {
   id: string;
@@ -33,10 +37,64 @@ export interface Lesson {
   grade: number;
   subject: string;
   slides: Slide[];
-  schoolId: string;
+  schoolId?: string | null;
+  language?: "en" | "fr" | null;
+  lessonNo?: number | null;
+  fileId?: string | null; // linked PDF, rendered in the lesson viewer
   assignedTeacherIds: string[];
-  dueDate: string;
-  createdBy: string; // super admin id
+  dueDate?: string | null;
+  createdBy?: string | null;
+  // Sequential-unlock state for the requesting teacher (absent for admins).
+  accessStatus?: LessonAccessStatus | null;
+  availableAt?: string | null;
+  accessMessage?: string | null;
+}
+
+// Super-admin lesson-access management view.
+export interface TeacherLessonAccessRow {
+  lessonId: string;
+  title: string;
+  grade: number;
+  language?: "en" | "fr" | null;
+  lessonNo?: number | null;
+  status: LessonAccessStatus;
+  availableAt?: string | null;
+  percentComplete: number;
+  completedAt?: string | null;
+  unlockedOverride: boolean;
+}
+
+export interface TeacherAccessTrack {
+  grade: number;
+  language?: "en" | "fr" | null;
+  lessons: TeacherLessonAccessRow[];
+}
+
+export interface TeacherAccess {
+  teacherId: string;
+  teacherName: string;
+  email: string;
+  schoolId?: string | null;
+  grades: string[];
+  language?: "en" | "fr" | "both" | null;
+  tracks: TeacherAccessTrack[];
+}
+
+export type AccessRequestStatus = "pending" | "granted" | "denied";
+
+// A teacher's request for the super-admin to unlock a locked lesson.
+export interface AccessRequest {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  lessonId: string;
+  lessonTitle: string;
+  grade: number;
+  language?: "en" | "fr" | null;
+  lessonNo?: number | null;
+  status: AccessRequestStatus;
+  note?: string | null;
+  createdAt: string;
 }
 
 export interface Slide {
@@ -71,6 +129,16 @@ export interface Report {
   requestedAt: string;
   status: ReportStatus;
   readyAt?: string;
+}
+
+export interface UploadedFile {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy?: string;
+  linkedLessonId?: string;
+  createdAt: string;
 }
 
 export type SecurityEventType =

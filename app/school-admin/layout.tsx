@@ -1,5 +1,16 @@
-import { DashboardShell } from "@/components/layout/DashboardShell";
+"use client";
 
-export default function SchoolAdminLayout({ children }: { children: React.ReactNode }) {
-  return <DashboardShell role="school-admin">{children}</DashboardShell>;
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { SchoolAdminThemeProvider } from "@/lib/schoolAdminTheme";
+
+export default function SchoolAdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <SchoolAdminThemeProvider>
+      <DashboardShell role="school-admin">{children}</DashboardShell>
+    </SchoolAdminThemeProvider>
+  );
 }

@@ -15,6 +15,8 @@ import {
   Sparkles,
   TrendingUp,
   AlertTriangle,
+  Database,
+  Unlock,
   X,
 } from "lucide-react";
 import type { Role } from "@/types";
@@ -30,9 +32,10 @@ const navByRole: Record<Role, NavItem[]> = {
     { href: "/super-admin/accounts", label: "Accounts", icon: Users },
     { href: "/super-admin/files", label: "Files", icon: FileUp },
     { href: "/super-admin/access", label: "Access Control", icon: KeyRound },
-    { href: "/super-admin/ai", label: "AI Assistant", icon: Sparkles },
+    { href: "/super-admin/lesson-access", label: "Lesson Unlock", icon: Unlock },
     { href: "/super-admin/reports", label: "Reports", icon: FileBarChart2 },
     { href: "/super-admin/security", label: "Security Logs", icon: ShieldCheck },
+    { href: "/super-admin/backup", label: "Backup", icon: Database },
   ],
   "school-admin": [
     { href: "/school-admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -68,9 +71,11 @@ export function Sidebar({
       <div className="px-5 py-5 border-b border-slate-800">
         <div className="flex items-center justify-between gap-2">
           <Link href="/" className="flex items-center gap-2" onClick={onNavigate}>
-            <div className="h-8 w-8 rounded-md bg-brand flex items-center justify-center text-white font-bold">
-              IM
-            </div>
+            <img
+              src="/logo.png"
+              alt="IM-Telligence"
+              className="h-9 w-9 rounded-md bg-white object-contain p-0.5"
+            />
             <div>
               <p className="text-sm font-semibold text-white leading-tight">IM-Telligence</p>
               <p className="text-[10px] uppercase tracking-wider text-slate-400">

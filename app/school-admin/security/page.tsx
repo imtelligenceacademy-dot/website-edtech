@@ -3,15 +3,18 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/DashboardShell";
 import { SecurityLogTable } from "@/components/security/SecurityLogTable";
-import { mockSecurityLogs } from "@/data/mockSecurityLogs";
-import { getSession } from "@/lib/mockAuth";
+import { listSecurityLogs } from "@/lib/api";
+import type { SecurityLog } from "@/types";
 
 export default function SchoolAdminSecurityPage() {
-  const [schoolId, setSchoolId] = useState<string | undefined>();
-  useEffect(() => setSchoolId(getSession()?.schoolId), []);
-  if (!schoolId) return null;
-
-  const logs = mockSecurityLogs.filter((l) => l.schoolId === schoolId);
+  const [logs, setLogs] = useState<SecurityLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    listSecurityLogs()
+      .then(setLogs)
+      .finally(() => setLoading(false));
+  }, []);
+  if (loading) return null;
 
   return (
     <>

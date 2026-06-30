@@ -1,23 +1,51 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { School, Users, BookOpen, ShieldAlert } from "lucide-react";
 import { PageHeader } from "@/components/layout/DashboardShell";
 import { StatCard } from "@/components/ui/StatCard";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { Badge } from "@/components/ui/Badge";
-import { mockSchools } from "@/data/mockSchools";
-import { mockUsers } from "@/data/mockUsers";
-import { mockSecurityLogs } from "@/data/mockSecurityLogs";
-import { mockLessons } from "@/data/mockLessons";
+import { getSuperAdminOverview, type SuperAdminOverview } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 
 export default function SuperAdminDashboard() {
-  const pending = mockUsers.filter((u) => u.status === "pending");
-  const teachers = mockUsers.filter((u) => u.role === "teacher");
-  const recentSecurity = mockSecurityLogs
-    .filter((l) => l.status !== "ok")
-    .slice(0, 5);
+  const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getSuperAdminOverview()
+      .then(setOverview)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Failed to load dashboard.")
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+
+  if (error || !overview) {
+    return (
+      <>
+        <PageHeader
+          title="Overview"
+          subtitle="Platform-wide health, accounts, and activity."
+        />
+        <Card>
+          <CardBody>
+            <p className="text-sm text-slate-500">
+              {error ?? "No data available."}
+            </p>
+          </CardBody>
+        </Card>
+      </>
+    );
+  }
+
+  const pending = overview.pendingApprovals;
+  const recentSecurity = overview.securityAlerts;
 
   return (
     <>
@@ -27,12 +55,12 @@ export default function SuperAdminDashboard() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Schools" value={mockSchools.length} icon={<School size={18} />} />
-        <StatCard label="Teachers" value={teachers.length} icon={<Users size={18} />} />
-        <StatCard label="Lessons" value={mockLessons.length} icon={<BookOpen size={18} />} />
+        <StatCard label="Schools" value={overview.schoolCount} icon={<School size={18} />} />
+        <StatCard label="Teachers" value={overview.teacherCount} icon={<Users size={18} />} />
+        <StatCard label="Lessons" value={overview.lessonCount} icon={<BookOpen size={18} />} />
         <StatCard
           label="Pending approvals"
-          value={pending.length}
+          value={overview.pendingCount}
           icon={<ShieldAlert size={18} />}
         />
       </div>

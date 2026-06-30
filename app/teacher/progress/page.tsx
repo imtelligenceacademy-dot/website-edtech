@@ -6,23 +6,32 @@ import { PageHeader } from "@/components/layout/DashboardShell";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { WatchdogBadge } from "@/components/watchdog/WatchdogBadge";
-import { mockProgress } from "@/data/mockProgress";
-import { mockLessons } from "@/data/mockLessons";
-import { getSession } from "@/lib/mockAuth";
+import { listLessons, listProgress } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import type { Lesson, ProgressEntry } from "@/types";
 
 export default function TeacherProgressPage() {
-  const [userId, setUserId] = useState<string | undefined>();
-  useEffect(() => setUserId(getSession()?.userId), []);
-  if (!userId) return null;
+  const [progress, setProgress] = useState<ProgressEntry[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const mine = mockProgress.filter((p) => p.teacherId === userId);
-  const completed = mine.filter((p) => p.status === "completed").length;
-  const late = mine.filter((p) => p.status === "late").length;
+  useEffect(() => {
+    Promise.all([listProgress(), listLessons()])
+      .then(([progressRows, lessonRows]) => {
+        setProgress(progressRows);
+        setLessons(lessonRows);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+
+  const completed = progress.filter((p) => p.status === "completed").length;
+  const late = progress.filter((p) => p.status === "late").length;
   const avg =
-    mine.length === 0
+    progress.length === 0
       ? 0
-      : Math.round(mine.reduce((acc, p) => acc + p.percentComplete, 0) / mine.length);
+      : Math.round(progress.reduce((acc, p) => acc + p.percentComplete, 0) / progress.length);
 
   return (
     <>
@@ -37,8 +46,8 @@ export default function TeacherProgressPage() {
       <Card>
         <CardHeader title="Lesson detail" />
         <CardBody className="space-y-3">
-          {mine.map((p) => {
-            const l = mockLessons.find((x) => x.id === p.lessonId);
+          {progress.map((p) => {
+            const l = lessons.find((x) => x.id === p.lessonId);
             return (
               <div
                 key={p.id}

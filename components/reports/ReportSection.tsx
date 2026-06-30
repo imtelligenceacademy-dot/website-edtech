@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { Download, Eye, FileBarChart2, Loader2, RefreshCcw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, Eye, FileText, Loader2, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
-import { formatDate } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
+import { useSchoolAdminTheme } from "@/lib/schoolAdminTheme";
+import { downloadReport as downloadWordReport, listReports } from "@/lib/api";
 import type { Report, ReportStatus } from "@/types";
-import { mockReports } from "@/data/mockReports";
 
-const statusTone: Record<ReportStatus, { tone: Parameters<typeof Badge>[0]["tone"]; label: string }> = {
+const statusTone: Record<
+  ReportStatus,
+  { tone: Parameters<typeof Badge>[0]["tone"]; label: string }
+> = {
   pending: { tone: "neutral", label: "Pending" },
   processing: { tone: "info", label: "Processing" },
   ready: { tone: "success", label: "Ready" },
@@ -20,17 +23,40 @@ const statusTone: Record<ReportStatus, { tone: Parameters<typeof Badge>[0]["tone
 export function ReportSection({
   scope,
   schoolId,
-  requestedBy,
 }: {
   scope: "global" | "school";
   schoolId?: string;
-  requestedBy: string;
 }) {
-  const initial = mockReports.filter((r) =>
-    scope === "global" ? true : r.schoolId === schoolId
-  );
-  const [reports, setReports] = useState<Report[]>(initial);
+  const { theme } = useSchoolAdminTheme();
+  const dark = theme === "dark";
+  const muted = dark ? "text-slate-400" : "text-slate-500";
+  const strong = dark ? "text-white" : "text-slate-900";
+
+  const [reports, setReports] = useState<Report[]>([]);
   const [viewing, setViewing] = useState<Report | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownloadWord() {
+    setDownloadError(null);
+    setDownloading(true);
+    try {
+      await downloadWordReport(scope === "school" ? "school" : "super", schoolId);
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : "Download failed.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  useEffect(() => {
+    listReports()
+      .then((rows) =>
+        setReports(rows.filter((r) => (scope === "global" ? true : r.schoolId === schoolId)))
+      )
+      .finally(() => setLoading(false));
+  }, [schoolId, scope]);
 
   function downloadFile(name: string, contents: string, type = "text/csv") {
     const url = URL.createObjectURL(new Blob([contents], { type }));
@@ -65,34 +91,11 @@ export function ReportSection({
         `Status: ${report.status}`,
         `Requested: ${formatDate(report.requestedAt)}`,
         report.readyAt ? `Ready: ${formatDate(report.readyAt)}` : "",
-      ].filter(Boolean).join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       "text/plain"
     );
-  }
-
-  function generate() {
-    // TODO: POST to backend to enqueue a report job.
-    const newReport: Report = {
-      id: `rep_${Date.now()}`,
-      title: `Custom Report — ${new Date().toLocaleDateString()}`,
-      scope,
-      schoolId,
-      requestedBy,
-      requestedAt: new Date().toISOString(),
-      status: "processing",
-    };
-    setReports((prev) => [newReport, ...prev]);
-
-    // Simulate processing -> ready after 3s.
-    setTimeout(() => {
-      setReports((prev) =>
-        prev.map((r) =>
-          r.id === newReport.id
-            ? { ...r, status: "ready", readyAt: new Date().toISOString() }
-            : r
-        )
-      );
-    }, 3000);
   }
 
   function markReady(id: string) {
@@ -115,83 +118,100 @@ export function ReportSection({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-600">
-          {reports.length} report{reports.length === 1 ? "" : "s"} on file
+        <p className={cn("text-sm", dark ? "text-slate-300" : "text-slate-600")}>
+          {loading
+            ? "Loading reports..."
+            : `${reports.length} report${reports.length === 1 ? "" : "s"} on file`}
         </p>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={exportAll} disabled={reports.length === 0}>
-            <Download size={14} /> Export all
+            <Download size={14} /> Export CSV
           </Button>
-          <Button onClick={generate}>
-            <FileBarChart2 size={14} />
-            Generate report
+          <Button onClick={handleDownloadWord} disabled={downloading}>
+            <FileText size={14} />
+            {downloading ? "Preparing…" : "Download Word report"}
           </Button>
         </div>
       </div>
+      {downloadError && <p className="text-xs text-red-600">{downloadError}</p>}
 
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <Table>
-          <THead>
-            <TR>
-              <TH>Report</TH>
-              <TH>Requested</TH>
-              <TH>Status</TH>
-              <TH className="text-right">Actions</TH>
-            </TR>
-          </THead>
-          <tbody>
-            {reports.map((r) => {
-              const s = statusTone[r.status];
-              return (
-                <TR key={r.id}>
-                  <TD>
-                    <div className="font-medium text-slate-900">{r.title}</div>
-                    <div className="text-xs text-slate-500">
-                      Scope: {r.scope}
-                    </div>
-                  </TD>
-                  <TD>{formatDate(r.requestedAt)}</TD>
-                  <TD>
-                    <Badge tone={s.tone}>
-                      {r.status === "processing" && (
-                        <Loader2 size={10} className="animate-spin" />
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border backdrop-blur",
+          dark ? "border-white/10 bg-white/[0.03]" : "border-slate-200 bg-white"
+        )}
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className={cn("text-left text-[11px] uppercase tracking-wider", muted)}>
+                <th className="px-4 py-2.5 font-medium">Report</th>
+                <th className="px-4 py-2.5 font-medium">Requested</th>
+                <th className="px-4 py-2.5 font-medium">Status</th>
+                <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((r) => {
+                const s = statusTone[r.status];
+                return (
+                  <tr key={r.id} className={cn("border-t", dark ? "border-white/5" : "border-slate-100")}>
+                    <td className="px-4 py-3">
+                      <div className={cn("font-medium", strong)}>{r.title}</div>
+                      <div className={cn("text-xs", muted)}>Scope: {r.scope}</div>
+                    </td>
+                    <td className={cn("px-4 py-3", dark ? "text-slate-300" : "text-slate-600")}>
+                      {formatDate(r.requestedAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={s.tone}>
+                        {r.status === "processing" && (
+                          <Loader2 size={10} className="animate-spin" />
+                        )}
+                        {s.label}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.status === "ready" && (
+                        <div className="inline-flex gap-2">
+                          <Button size="sm" variant="secondary" onClick={() => setViewing(r)}>
+                            <Eye size={12} /> View
+                          </Button>
+                          <Button size="sm" onClick={() => downloadReport(r)}>
+                            <Download size={12} /> Download
+                          </Button>
+                        </div>
                       )}
-                      {s.label}
-                    </Badge>
-                  </TD>
-                  <TD className="text-right">
-                    {r.status === "ready" && (
-                      <div className="inline-flex gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => setViewing(r)}>
-                          <Eye size={12} /> View
+                      {r.status === "processing" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => markReady(r.id)}
+                          title="Simulate completion"
+                        >
+                          <RefreshCcw size={12} />
+                          Mark ready
                         </Button>
-                        <Button size="sm" onClick={() => downloadReport(r)}>
-                          <Download size={12} /> Download
+                      )}
+                      {r.status === "failed" && (
+                        <Button size="sm" variant="secondary" onClick={() => retry(r.id)}>
+                          <RefreshCcw size={12} /> Retry
                         </Button>
-                      </div>
-                    )}
-                    {r.status === "processing" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => markReady(r.id)}
-                        title="Simulate completion"
-                      >
-                        <RefreshCcw size={12} />
-                        Mark ready
-                      </Button>
-                    )}
-                    {r.status === "failed" && (
-                      <Button size="sm" variant="secondary" onClick={() => retry(r.id)}>
-                        <RefreshCcw size={12} /> Retry
-                      </Button>
-                    )}
-                  </TD>
-                </TR>
-              );
-            })}
-          </tbody>
-        </Table>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {reports.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={4} className={cn("px-4 py-6 text-center", muted)}>
+                    No reports yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <Modal

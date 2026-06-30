@@ -10,7 +10,7 @@ export default function SuperAdminReportsPage() {
         title="Reports"
         subtitle="Global platform reports across all schools."
       />
-      <ReportSection scope="global" requestedBy="u_super_01" />
+      <ReportSection scope="global" />
     </>
   );
 }

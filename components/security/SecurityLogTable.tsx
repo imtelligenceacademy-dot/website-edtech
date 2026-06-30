@@ -1,6 +1,8 @@
+"use client";
+
 import { Badge } from "@/components/ui/Badge";
-import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
-import { formatDate } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
+import { useSchoolAdminTheme } from "@/lib/schoolAdminTheme";
 import type { SecurityEventType, SecurityLog } from "@/types";
 
 const eventLabel: Record<SecurityEventType, string> = {
@@ -21,48 +23,72 @@ const statusTone: Record<
 };
 
 export function SecurityLogTable({ logs }: { logs: SecurityLog[] }) {
+  const { theme } = useSchoolAdminTheme();
+  const dark = theme === "dark";
+  const muted = dark ? "text-slate-400" : "text-slate-500";
+  const strong = dark ? "text-white" : "text-slate-900";
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-      <Table>
-        <THead>
-          <TR>
-            <TH>User</TH>
-            <TH>Role</TH>
-            <TH>Event</TH>
-            <TH>IP / Location</TH>
-            <TH>Device</TH>
-            <TH>Status</TH>
-            <TH>Time</TH>
-          </TR>
-        </THead>
-        <tbody>
-          {logs.map((l) => {
-            const s = statusTone[l.status];
-            return (
-              <TR key={l.id}>
-                <TD>
-                  <div className="font-medium text-slate-900">{l.userName}</div>
-                  <div className="text-xs text-slate-500">{l.userId}</div>
-                </TD>
-                <TD className="capitalize">{l.role.replace("-", " ")}</TD>
-                <TD>{eventLabel[l.event]}</TD>
-                <TD>
-                  <div className="font-mono text-xs">{l.ip}</div>
-                  <div className="text-xs text-slate-500">
-                    {l.location.label} ({l.location.lat.toFixed(2)},{" "}
-                    {l.location.lng.toFixed(2)})
-                  </div>
-                </TD>
-                <TD className="text-xs">{l.device}</TD>
-                <TD>
-                  <Badge tone={s.tone}>{s.label}</Badge>
-                </TD>
-                <TD className="text-xs">{formatDate(l.timestamp)}</TD>
-              </TR>
-            );
-          })}
-        </tbody>
-      </Table>
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border backdrop-blur",
+        dark ? "border-white/10 bg-white/[0.03]" : "border-slate-200 bg-white"
+      )}
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className={cn("text-left text-[11px] uppercase tracking-wider", muted)}>
+              {["User", "Role", "Event", "IP / Location", "Device", "Status", "Time"].map((h) => (
+                <th key={h} className="px-4 py-2.5 font-medium">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map((l) => {
+              const s = statusTone[l.status];
+              return (
+                <tr key={l.id} className={cn("border-t", dark ? "border-white/5" : "border-slate-100")}>
+                  <td className="px-4 py-3">
+                    <div className={cn("font-medium", strong)}>{l.userName}</div>
+                    <div className={cn("text-xs", muted)}>{l.userId}</div>
+                  </td>
+                  <td className={cn("px-4 py-3 capitalize", dark ? "text-slate-300" : "text-slate-600")}>
+                    {l.role.replace("-", " ")}
+                  </td>
+                  <td className={cn("px-4 py-3", dark ? "text-slate-300" : "text-slate-600")}>
+                    {eventLabel[l.event]}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className={cn("font-mono text-xs", dark ? "text-slate-300" : "text-slate-700")}>
+                      {l.ip}
+                    </div>
+                    <div className={cn("text-xs", muted)}>
+                      {l.location.label} ({l.location.lat.toFixed(2)}, {l.location.lng.toFixed(2)})
+                    </div>
+                  </td>
+                  <td className={cn("px-4 py-3 text-xs", dark ? "text-slate-300" : "text-slate-600")}>
+                    {l.device}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge tone={s.tone}>{s.label}</Badge>
+                  </td>
+                  <td className={cn("px-4 py-3 text-xs", muted)}>{formatDate(l.timestamp)}</td>
+                </tr>
+              );
+            })}
+            {logs.length === 0 && (
+              <tr>
+                <td colSpan={7} className={cn("px-4 py-6 text-center", muted)}>
+                  No security events.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

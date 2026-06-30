@@ -1,18 +1,10 @@
-"use client";
-
-import { PageHeader } from "@/components/layout/DashboardShell";
-import { AdminChatbot } from "@/components/ai/AdminChatbot";
+import { SchoolAdminChat } from "@/components/ai/SchoolAdminChat";
 
 export default function SchoolAdminAIPage() {
+  // Fill the shell's content area (viewport minus the 56px topbar), edge-to-edge.
   return (
-    <>
-      <PageHeader
-        title="AI Assistant"
-        subtitle="Ask about your teachers, progress, late lessons, or security alerts."
-      />
-      <div className="h-[calc(100vh-220px)] min-h-[520px] max-w-3xl">
-        <AdminChatbot scope="school-admin" />
-      </div>
-    </>
+    <div className="h-[calc(100vh-3.5rem)] -m-4 sm:-m-6 md:-m-8">
+      <SchoolAdminChat />
+    </div>
   );
 }
