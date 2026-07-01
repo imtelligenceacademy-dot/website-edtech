@@ -14,22 +14,35 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
-_connect_args = (
-    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-)
+IS_SQLITE = settings.database_url.startswith("sqlite")
+
+
+def _engine_url(url: str) -> str:
+    """Normalize the DB URL. Railway/Heroku hand out ``postgres://`` or
+    ``postgresql://`` (which default to psycopg2); rewrite both to use the
+    installed psycopg (v3) driver. SQLite and other URLs are left untouched."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+_connect_args = {"check_same_thread": False} if IS_SQLITE else {}
 
 engine = create_engine(
-    settings.database_url,
+    _engine_url(settings.database_url),
     connect_args=_connect_args,
     echo=False,
     future=True,
+    # Verify connections before use — cloud Postgres drops idle connections.
+    pool_pre_ping=not IS_SQLITE,
 )
 
 
 @event.listens_for(Engine, "connect")
 def _set_sqlite_pragmas(dbapi_connection, connection_record):
     """Enable foreign-key enforcement and WAL mode on every SQLite connection."""
-    if settings.database_url.startswith("sqlite"):
+    if IS_SQLITE:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -64,7 +77,13 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
 
 
 def ensure_added_columns() -> None:
-    """Add post-v1 columns to existing tables without touching their data."""
+    """Add post-v1 columns to existing tables without touching their data.
+
+    This is a SQLite dev-convenience shim (the DDL below is SQLite-flavoured).
+    On Postgres a fresh `create_all` already includes every column, and real
+    schema changes should go through Alembic — so this is a no-op there."""
+    if not IS_SQLITE:
+        return
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     with engine.begin() as conn:
