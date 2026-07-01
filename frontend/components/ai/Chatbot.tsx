@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
-  Sparkles,
+  Plus,
   FileText,
   CheckCircle2,
   HelpCircle,
@@ -31,57 +31,19 @@ import {
   listLessons,
   listMyAccessRequests,
   requestLessonAccess,
+  saveLessonProgress,
   streamTeacherAI,
 } from "@/lib/api";
-import { PdfCanvasViewer } from "@/components/ppt-viewer/PdfCanvasViewer";
+import { PdfCanvasViewer } from "@/components/lesson-viewer/PdfCanvasViewer";
 import type { AIMessage, Lesson, Session } from "@/types";
-import { mockLessons } from "@/data/mockLessons";
-
-// Fallback lesson used only for the slide-by-slide PPT workflow demo when the
-// teacher has no real assigned lessons loaded yet.
-const fallbackLesson = mockLessons[0];
 
 type ReportEntry = {
   id: string;
-  kind: "ppt" | "question";
+  kind: "lesson" | "question";
   summary: string;
   at: string;
 };
 
-const PPT_KEYWORDS = [
-  "next",
-  "ppt",
-  "slide",
-  "presentation",
-  "continue",
-  "move on",
-  "next one",
-  "done",
-  "finished",
-  "complete",
-  "accomplished",
-  "mark",
-];
-
-function isPPTRequest(input: string): boolean {
-  const lower = input.toLowerCase();
-  return PPT_KEYWORDS.some((k) => lower.includes(k));
-}
-
-function isCompletionConfirmation(input: string): boolean {
-  const lower = input.toLowerCase();
-  return /\b(yes|yep|done|finished|complete|accomplished|mark it|i did)\b/.test(
-    lower
-  );
-}
-
-// The slide-by-slide PPT workflow demo runs against this fallback lesson.
-const currentLesson = fallbackLesson;
-
-const BASE_SUGGESTIONS = [
-  { label: "Summarize this lesson for me", icon: FileText },
-  { label: "What activity can I run for this lesson?", icon: Sparkles },
-];
 
 // Maps "first/second/…", "one/two/…", "1st/2nd/…" to a lesson number.
 const WORD_NUMBERS: Record<string, number> = {
@@ -174,13 +136,24 @@ function lessonLockMessage(lesson: Lesson): string {
   }
 }
 
+// Lesson-action intents the assistant handles itself (never sent to the LLM).
+// "I finished/completed the lesson/pdf" / "mark the pdf as complete" -> mark done.
+const COMPLETE_INTENT =
+  /\b(i(?:'ve| have)?\s*(?:just\s*)?(?:finished|done|completed)|(?:finished|completed|done with)\s+(?:the|this|my)\s+(?:lesson|pdf|presentation|deck)|mark(?:\s+(?:it|this|the\s+(?:lesson|pdf|presentation)))?\s+(?:as\s+)?complete|mark complete)\b/i;
+// "open/start the next lesson" -> advance to the next lesson in the track.
+const NEXT_LESSON_INTENT = /\bnext (?:lesson|one)\b|\b(?:open|start|go to|load)\b[^.?!]*\bnext\b/i;
+// "open my lesson" / "reopen this lesson" -> open the current/available lesson.
+const OPEN_LESSON_INTENT = /\breopen\b|\b(?:open|start|resume|continue|load|go to)\b[^.?!]*\blesson\b/i;
+
+// Order lessons by their curriculum number for sequential navigation.
+function byLessonNo(a: Lesson, b: Lesson): number {
+  return (a.lessonNo ?? 0) - (b.lessonNo ?? 0);
+}
+
 export function Chatbot() {
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
-  const [slideIndex, setSlideIndex] = useState(0);
-  const [currentSlideDone, setCurrentSlideDone] = useState(false);
-  const [awaitingCompletion, setAwaitingCompletion] = useState(false);
   const [report, setReport] = useState<ReportEntry[]>([]);
   const [openedLesson, setOpenedLesson] = useState<Lesson | null>(null);
   const [openedSlide, setOpenedSlide] = useState(1);
@@ -248,83 +221,6 @@ export function Chatbot() {
       ...prev,
       { ...entry, id: `r_${Date.now()}`, at: new Date().toISOString() },
     ]);
-  }
-
-  function handlePPTBranch(text: string) {
-    const slide = currentLesson.slides[slideIndex];
-    const isLast = slideIndex >= currentLesson.slides.length - 1;
-
-    if (awaitingCompletion) {
-      if (isCompletionConfirmation(text)) {
-        setCurrentSlideDone(true);
-        setAwaitingCompletion(false);
-        if (isLast) {
-          pushAssistant(
-            `Great — "${slide.title}" marked accomplished. That was the final slide of "${currentLesson.title}". Lesson complete.`,
-            { sourceRef: `${currentLesson.title}, Slide ${slide.index}` }
-          );
-          logReport({
-            kind: "ppt",
-            summary: `Marked slide ${slide.index} done — lesson "${currentLesson.title}" completed.`,
-          });
-        } else {
-          const next = currentLesson.slides[slideIndex + 1];
-          setSlideIndex(slideIndex + 1);
-          setCurrentSlideDone(false);
-          pushAssistant(
-            `Marked "${slide.title}" accomplished. Next up: Slide ${next.index} — "${next.title}".\n\n${next.body}`,
-            { sourceRef: `${currentLesson.title}, Slide ${next.index}` }
-          );
-          logReport({
-            kind: "ppt",
-            summary: `Advanced from slide ${slide.index} → ${next.index} ("${next.title}").`,
-          });
-        }
-      } else {
-        pushAssistant(
-          `No problem — finish "${slide.title}" first, then tell me when it's done and I'll send the next slide.`
-        );
-        logReport({
-          kind: "ppt",
-          summary: `Teacher did not yet complete slide ${slide.index} ("${slide.title}").`,
-        });
-      }
-      return;
-    }
-
-    if (currentSlideDone) {
-      if (isLast) {
-        pushAssistant(
-          `You've already finished the last slide of "${currentLesson.title}". Lesson complete.`
-        );
-        logReport({
-          kind: "ppt",
-          summary: `PPT request — lesson "${currentLesson.title}" already complete.`,
-        });
-      } else {
-        const next = currentLesson.slides[slideIndex + 1];
-        setSlideIndex(slideIndex + 1);
-        setCurrentSlideDone(false);
-        pushAssistant(
-          `Here's the next one — Slide ${next.index}: "${next.title}".\n\n${next.body}`,
-          { sourceRef: `${currentLesson.title}, Slide ${next.index}` }
-        );
-        logReport({
-          kind: "ppt",
-          summary: `Served next slide ${next.index} ("${next.title}").`,
-        });
-      }
-    } else {
-      setAwaitingCompletion(true);
-      pushAssistant(
-        `Before moving on — have you accomplished the current slide ("${slide.title}", Slide ${slide.index} of ${currentLesson.title})? Reply "yes" to mark it done and I'll send the next one.`,
-        { sourceRef: `${currentLesson.title}, Slide ${slide.index}` }
-      );
-      logReport({
-        kind: "ppt",
-        summary: `Asked teacher to confirm completion of slide ${slide.index}.`,
-      });
-    }
   }
 
   async function answerQuestion(text: string) {
@@ -416,7 +312,7 @@ export function Chatbot() {
     if (lesson.accessStatus && lesson.accessStatus !== "available") {
       pushAssistant(lessonLockMessage(lesson), { sourceRef: lesson.title });
       logReport({
-        kind: "ppt",
+        kind: "lesson",
         summary: `Blocked — "${lesson.title}" is ${lesson.accessStatus}.`,
       });
       return;
@@ -430,9 +326,75 @@ export function Chatbot() {
       sourceRef: lesson.title,
     });
     logReport({
-      kind: "ppt",
+      kind: "lesson",
       summary: `Opened lesson "${lesson.title}" (Grade ${lesson.grade}).`,
     });
+  }
+
+  // "I finished the lesson" — record the open lesson as complete.
+  async function markCurrentComplete() {
+    if (!openedLesson) {
+      setThinking(false);
+      pushAssistant(
+        "Open a lesson first, then tell me you've finished and I'll mark it complete for you."
+      );
+      return;
+    }
+    const lesson = openedLesson;
+    try {
+      await saveLessonProgress(lesson.id, { complete: true });
+      const fresh = await listLessons().catch(() => null);
+      if (fresh) setLessons(fresh);
+      pushAssistant(
+        `Nice work — I've marked "${lesson.title}" as complete. Your next lesson unlocks after the waiting period; say "open the next lesson" and I'll open it once it's available.`,
+        { sourceRef: lesson.title }
+      );
+      logReport({ kind: "lesson", summary: `Marked "${lesson.title}" complete.` });
+    } catch {
+      pushAssistant(
+        `I couldn't mark "${lesson.title}" complete just now. You can also use the "Mark complete" button on the lesson. Please try again in a moment.`
+      );
+    } finally {
+      setThinking(false);
+    }
+  }
+
+  // "Open the next lesson" — advance in sequence. openLesson enforces access, so
+  // a not-yet-finished current lesson or an active waiting period is explained.
+  function openNextLesson() {
+    setThinking(false);
+    const sorted = [...gradeLessons].sort(byLessonNo);
+    let next: Lesson | undefined;
+    if (openedLesson) {
+      const idx = sorted.findIndex((l) => l.id === openedLesson.id);
+      next = idx >= 0 ? sorted[idx + 1] : undefined;
+    } else {
+      next = sorted.find((l) => l.accessStatus !== "completed");
+    }
+    if (!next) {
+      pushAssistant("You're on the last lesson of this grade — there's no next one yet.");
+      return;
+    }
+    openLesson(next);
+  }
+
+  // "Open my lesson" / "reopen this lesson" — open the current or next-available one.
+  function openCurrentLesson() {
+    setThinking(false);
+    if (openedLesson) {
+      openLesson(openedLesson);
+      return;
+    }
+    const sorted = [...gradeLessons].sort(byLessonNo);
+    const target =
+      sorted.find((l) => l.accessStatus === "available") ??
+      sorted.find((l) => l.accessStatus !== "completed") ??
+      sorted[0];
+    if (!target) {
+      pushAssistant("You don't have any lessons in this grade yet.");
+      return;
+    }
+    openLesson(target);
   }
 
   function send(textOverride?: string) {
@@ -446,22 +408,32 @@ export function Chatbot() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
-    setThinking(true);
 
-    // Either the teacher is opening a lesson, or it's a question for the AI
-    // (grounded on the open PDF). Lesson lookup is scoped to the chosen grade.
-    const lessonToOpen = findLessonByText(text, gradeLessons);
-    if (lessonToOpen) {
-      setTimeout(() => {
-        openLesson(lessonToOpen);
-        setThinking(false);
-      }, 400);
-    } else {
-      void answerQuestion(text);
+    // Lesson actions are handled by the app itself (not the LLM):
+    if (COMPLETE_INTENT.test(text)) {
+      setThinking(true);
+      void markCurrentComplete();
+      return;
     }
+    if (NEXT_LESSON_INTENT.test(text)) {
+      openNextLesson();
+      return;
+    }
+    const named = findLessonByText(text, gradeLessons);
+    if (named) {
+      openLesson(named);
+      return;
+    }
+    if (OPEN_LESSON_INTENT.test(text)) {
+      openCurrentLesson();
+      return;
+    }
+
+    // Otherwise it's a question for the grounded AI assistant.
+    setThinking(true);
+    void answerQuestion(text);
   }
 
-  const slide = currentLesson.slides[slideIndex];
   const isEmpty = messages.length === 0;
 
   // Grades the teacher actually has lessons for, and the lessons in the chosen one.
@@ -474,6 +446,18 @@ export function Chatbot() {
   function chooseGrade(grade: number) {
     setSelectedGrade(grade);
     setOpenedLesson(null);
+  }
+
+  // Return to the clean starting screen (grade picker) with an empty session.
+  function resetSession() {
+    setMessages([]);
+    setReport([]);
+    setInput("");
+    setThinking(false);
+    setOpenedLesson(null);
+    setFullscreenLesson(null);
+    setSelectedGrade(null);
+    refreshLessons();
   }
 
   return (
@@ -515,9 +499,9 @@ export function Chatbot() {
         />
       </div>
 
-      {/* PPTX viewer pane — shown to the left of the chat when a lesson is open */}
+      {/* Lesson viewer pane — shown to the left of the chat when a lesson is open */}
       {openedLesson && (
-        <PPTXPane
+        <LessonPane
           lesson={openedLesson}
           current={openedSlide}
           onPrev={() => setOpenedSlide((s) => Math.max(1, s - 1))}
@@ -529,6 +513,7 @@ export function Chatbot() {
             refreshLessons();
           }}
           onFullscreen={() => setFullscreenLesson(openedLesson)}
+          onCompleted={refreshLessons}
           light={light}
         />
       )}
@@ -541,16 +526,18 @@ export function Chatbot() {
             setFullscreenLesson(null);
             refreshLessons();
           }}
+          onCompleted={refreshLessons}
         />
       )}
 
       {/* Chat column */}
       <div className="relative z-10 flex h-full min-w-0 flex-1 flex-col">
-        {/* Header */}
+        {/* Header — relative z-30 lifts it (and its dropdown menus) above the
+            chat messages below, which otherwise paint over the dropdowns. */}
         <div
           className={cn(
-            "flex items-center gap-2 border-b px-3 py-4 backdrop-blur-xl sm:gap-3 sm:px-6",
-            light ? "border-slate-200/60" : "border-white/5"
+            "relative z-30 flex items-center gap-2 border-b px-3 py-4 backdrop-blur-xl sm:gap-3 sm:px-6",
+            light ? "border-slate-200/60 bg-white/70" : "border-white/5 bg-slate-950/40"
           )}
         >
           <div className="relative">
@@ -581,9 +568,23 @@ export function Chatbot() {
                 light ? "text-slate-500" : "text-slate-400"
               )}
             >
-              Lesson copilot · routes PPT requests and questions
+              Lesson copilot · opens lessons and answers questions
             </p>
           </div>
+          {(selectedGrade !== null || messages.length > 0) && (
+            <button
+              onClick={resetSession}
+              title="Start a new session"
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition",
+                light
+                  ? "border-slate-200 bg-white/70 text-slate-700 hover:bg-white"
+                  : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+              )}
+            >
+              <Plus size={13} /> <span className="hidden sm:inline">New chat</span>
+            </button>
+          )}
           {selectedGrade !== null && (
             <GradeMenu
               grade={selectedGrade}
@@ -611,7 +612,6 @@ export function Chatbot() {
             <WelcomeScreen
               lessons={gradeLessons}
               grade={selectedGrade}
-              onPick={(s) => send(s)}
               onOpenLesson={openLesson}
               onRequestAccess={requestAccess}
               requestedLessonIds={requestedLessonIds}
@@ -715,7 +715,7 @@ export function Chatbot() {
         </div>
       </div>
 
-      {/* Report rail — hidden while a pptx is open so the deck + chat get the space */}
+      {/* Report rail — hidden while a lesson is open so the viewer + chat get the space */}
       <aside
         className={cn(
           "relative z-10 hidden w-80 shrink-0 flex-col border-l backdrop-blur-xl",
@@ -745,7 +745,7 @@ export function Chatbot() {
         <div className="chat-scroll flex-1 space-y-2 overflow-y-auto px-4 py-4">
           {report.length === 0 ? (
             <p className={cn("px-1 text-xs", light ? "text-slate-500" : "text-slate-500")}>
-              Each PPT step and Q&A will appear here, in real time.
+              Each lesson action and Q&A will appear here, in real time.
             </p>
           ) : (
             report.map((r) => (
@@ -757,7 +757,7 @@ export function Chatbot() {
                 )}
               >
                 <div className="mb-1 flex items-center gap-1.5">
-                  {r.kind === "ppt" ? (
+                  {r.kind === "lesson" ? (
                     <FileText size={11} className={light ? "text-brand-600" : "text-brand-300"} />
                   ) : (
                     <HelpCircle size={11} className={light ? "text-brand-600" : "text-brand-300"} />
@@ -768,7 +768,7 @@ export function Chatbot() {
                       light ? "text-slate-500" : "text-slate-400"
                     )}
                   >
-                    {r.kind === "ppt" ? "PPT" : "Question"}
+                    {r.kind === "lesson" ? "Lesson" : "Question"}
                   </span>
                 </div>
                 <p className={cn("text-xs leading-snug", light ? "text-slate-700" : "text-slate-200")}>
@@ -916,8 +916,8 @@ function GradeMenu({
       {open && !single && (
         <div
           className={cn(
-            "absolute right-0 top-[calc(100%+6px)] z-50 w-32 overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl",
-            light ? "border-slate-200 bg-white/95" : "border-white/10 bg-slate-900/95"
+            "absolute right-0 top-[calc(100%+6px)] z-50 w-32 overflow-hidden rounded-xl border shadow-2xl",
+            light ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900"
           )}
         >
           {grades.map((g) => (
@@ -951,7 +951,6 @@ function GradeMenu({
 function WelcomeScreen({
   lessons,
   grade,
-  onPick,
   onOpenLesson,
   onRequestAccess,
   requestedLessonIds,
@@ -959,22 +958,11 @@ function WelcomeScreen({
 }: {
   lessons: Lesson[];
   grade: number;
-  onPick: (s: string) => void;
   onOpenLesson: (lesson: Lesson) => void;
   onRequestAccess: (lesson: Lesson) => void;
   requestedLessonIds: Set<string>;
   light: boolean;
 }) {
-  const chipClass = cn(
-    "group flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition hover:border-brand/40",
-    light
-      ? "border-slate-200 bg-white/70 text-slate-700 hover:bg-white"
-      : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-  );
-  const iconClass = cn(
-    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg group-hover:bg-brand/20",
-    light ? "bg-slate-100 text-brand-600" : "bg-white/5 text-brand-300"
-  );
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center text-center">
       <img
@@ -982,9 +970,6 @@ function WelcomeScreen({
         alt="IM-Telligence"
         className="mb-6 h-16 w-16 rounded-2xl bg-white object-contain p-1.5 shadow-xl shadow-brand/40"
       />
-      <div className="hidden">
-        <Sparkles size={28} className="text-white" />
-      </div>
       <h1
         className={cn(
           "bg-clip-text text-3xl font-semibold text-transparent sm:text-4xl",
@@ -1031,20 +1016,6 @@ function WelcomeScreen({
           </div>
         </div>
       )}
-
-      <div className="mt-4 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-        {BASE_SUGGESTIONS.map((s) => {
-          const Icon = s.icon;
-          return (
-            <button key={s.label} onClick={() => onPick(s.label)} className={chipClass}>
-              <span className={iconClass}>
-                <Icon size={14} />
-              </span>
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -1289,10 +1260,10 @@ function UserMenu({
       {open && (
         <div
           className={cn(
-            "absolute right-0 top-[calc(100%+8px)] z-50 w-64 overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl",
+            "absolute right-0 top-[calc(100%+8px)] z-50 w-64 overflow-hidden rounded-xl border shadow-2xl",
             light
-              ? "border-slate-200 bg-white/95"
-              : "border-white/10 bg-slate-900/95"
+              ? "border-slate-200 bg-white"
+              : "border-white/10 bg-slate-900"
           )}
         >
           <div
@@ -1381,13 +1352,14 @@ function TypingIndicator({ light }: { light: boolean }) {
   );
 }
 
-function PPTXPane({
+function LessonPane({
   lesson,
   current,
   onPrev,
   onNext,
   onClose,
   onFullscreen,
+  onCompleted,
   light,
 }: {
   lesson: Lesson;
@@ -1396,6 +1368,7 @@ function PPTXPane({
   onNext: () => void;
   onClose: () => void;
   onFullscreen: () => void;
+  onCompleted?: () => void;
   light: boolean;
 }) {
   const isPdf = Boolean(lesson.fileId);
@@ -1482,7 +1455,14 @@ function PPTXPane({
       {/* Canvas: real PDF when linked, otherwise the slide deck */}
       {isPdf ? (
         <div className="min-h-0 flex-1">
-          <PdfCanvasViewer fileId={lesson.fileId as string} lessonId={lesson.id} light={light} accessStatus={lesson.accessStatus} />
+          <PdfCanvasViewer
+            fileId={lesson.fileId as string}
+            lessonId={lesson.id}
+            light={light}
+            accessStatus={lesson.accessStatus}
+            onExit={onClose}
+            onCompleted={onCompleted}
+          />
         </div>
       ) : (
         <div className="flex flex-1 flex-col gap-4 px-8 py-6 min-h-0">
@@ -1599,9 +1579,11 @@ function PPTXPane({
 function FullscreenPdf({
   lesson,
   onClose,
+  onCompleted,
 }: {
   lesson: Lesson;
   onClose: () => void;
+  onCompleted?: () => void;
 }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -1634,7 +1616,14 @@ function FullscreenPdf({
         </button>
       </div>
       <div className="min-h-0 flex-1">
-        <PdfCanvasViewer fileId={lesson.fileId as string} lessonId={lesson.id} light accessStatus={lesson.accessStatus} />
+        <PdfCanvasViewer
+          fileId={lesson.fileId as string}
+          lessonId={lesson.id}
+          light
+          accessStatus={lesson.accessStatus}
+          onExit={onClose}
+          onCompleted={onCompleted}
+        />
       </div>
     </div>
   );

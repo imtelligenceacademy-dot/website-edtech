@@ -30,6 +30,7 @@ def _to_out(db: Session, school: School) -> SchoolOut:
         city=school.city,
         teacher_count=teacher_count or 0,
         admin_count=admin_count or 0,
+        created_at=school.created_at,
     )
 
 

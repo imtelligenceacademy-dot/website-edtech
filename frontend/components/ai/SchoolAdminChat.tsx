@@ -8,27 +8,35 @@ import {
   Users,
   AlertTriangle,
   TrendingUp,
-  FileBarChart2,
+  FileText,
+  Download,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getSession, streamAdminAI } from "@/lib/api";
-import { useSchoolAdminTheme } from "@/lib/schoolAdminTheme";
+import { downloadSchoolAIReport, getSession, streamAdminAI } from "@/lib/api";
 import type { AIMessage, Session } from "@/types";
 
 const SUGGESTIONS = [
   { label: "How many teachers do I have and what grades?", icon: Users },
   { label: "Which teachers are behind or have late lessons?", icon: AlertTriangle },
   { label: "What's the overall completion rate?", icon: TrendingUp },
-  { label: "Any security alerts I should know about?", icon: FileBarChart2 },
+  { label: "Generate a downloadable report of my school", icon: FileText },
 ];
+
+// Phrases that mean "make me a report I can download" rather than a chat answer.
+const REPORT_INTENT =
+  /\b(report|summary|download|word|docx?|export|pdf)\b/i;
+
+// Chat messages, optionally carrying a downloadable-report action.
+type ReportStatus = "idle" | "loading" | "done" | "error";
+type ChatMessage = AIMessage & { kind?: "report"; reportStatus?: ReportStatus };
 
 // Rendered inside the school-admin DashboardShell (sidebar + topbar stay).
 // Fills the content area; theme follows the shell's toggle.
 export function SchoolAdminChat() {
-  const { theme } = useSchoolAdminTheme();
-  const light = theme === "light";
+  const light = true;
 
-  const [messages, setMessages] = useState<AIMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -90,6 +98,20 @@ export function SchoolAdminChat() {
     }
   }
 
+  function setReportStatus(id: string, reportStatus: ReportStatus) {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, reportStatus } : m)));
+  }
+
+  async function generateReport(id: string) {
+    setReportStatus(id, "loading");
+    try {
+      await downloadSchoolAIReport();
+      setReportStatus(id, "done");
+    } catch {
+      setReportStatus(id, "error");
+    }
+  }
+
   function send(override?: string) {
     const text = (override ?? input).trim();
     if (!text) return;
@@ -98,6 +120,25 @@ export function SchoolAdminChat() {
       { id: `u_${Date.now()}`, role: "user", content: text, timestamp: new Date().toISOString() },
     ]);
     setInput("");
+
+    // A request for a report is answered with a downloadable Word document the
+    // assistant writes from the school's live data — not a plain chat reply.
+    if (REPORT_INTENT.test(text)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `rep_${Date.now()}`,
+          role: "assistant",
+          content:
+            "I can compile a full report of your school — teacher engagement, lesson progress, risks, and security — as a Word document grounded in your live data. Generate it below.",
+          timestamp: new Date().toISOString(),
+          kind: "report",
+          reportStatus: "idle",
+        },
+      ]);
+      return;
+    }
+
     setThinking(true);
     void answer(text);
   }
@@ -135,9 +176,18 @@ export function SchoolAdminChat() {
           <Welcome session={session} onPick={(s) => send(s)} light={light} />
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-6">
-            {messages.map((m) => (
-              <Bubble key={m.id} message={m} light={light} />
-            ))}
+            {messages.map((m) =>
+              m.kind === "report" ? (
+                <ReportMessage
+                  key={m.id}
+                  message={m}
+                  light={light}
+                  onGenerate={() => generateReport(m.id)}
+                />
+              ) : (
+                <Bubble key={m.id} message={m} light={light} />
+              )
+            )}
             {thinking && <Typing light={light} />}
           </div>
         )}
@@ -228,6 +278,71 @@ function Bubble({ message, light }: { message: AIMessage; light: boolean }) {
       </div>
       <div className={cn("max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed", isUser ? "bg-gradient-to-br from-brand to-brand-700 text-white shadow-lg shadow-brand/20" : light ? "border border-slate-200 bg-white text-slate-900" : "border border-white/10 bg-white/5 text-slate-100 backdrop-blur")}>
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
+      </div>
+    </div>
+  );
+}
+
+function ReportMessage({
+  message,
+  light,
+  onGenerate,
+}: {
+  message: ChatMessage;
+  light: boolean;
+  onGenerate: () => void;
+}) {
+  const status = message.reportStatus ?? "idle";
+  const busy = status === "loading";
+  return (
+    <div className="msg-in flex gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-700 text-white shadow-lg shadow-brand/30">
+        <Bot size={14} />
+      </div>
+      <div
+        className={cn(
+          "max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+          light
+            ? "border border-slate-200 bg-white text-slate-900"
+            : "border border-white/10 bg-white/5 text-slate-100 backdrop-blur"
+        )}
+      >
+        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            onClick={onGenerate}
+            disabled={busy}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition",
+              busy
+                ? "cursor-wait bg-slate-100 text-slate-400"
+                : "bg-gradient-to-br from-brand to-brand-700 text-white shadow-lg shadow-brand/30 hover:brightness-110"
+            )}
+          >
+            {busy ? (
+              <>
+                <Loader2 size={15} className="animate-spin" /> Generating report…
+              </>
+            ) : (
+              <>
+                <FileText size={15} />
+                {status === "done" ? "Download again" : "Generate Word report"}
+              </>
+            )}
+          </button>
+
+          {status === "done" && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+              <Download size={13} /> Downloaded
+            </span>
+          )}
+          {status === "error" && (
+            <span className="text-xs font-medium text-red-600">
+              Couldn&apos;t generate it — please try again.
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

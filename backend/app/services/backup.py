@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import logging
 import os
 import smtplib
 import sqlite3
@@ -10,10 +13,14 @@ import uuid
 from datetime import datetime, timezone
 from email.message import EmailMessage
 
+import httpx
+
 from app.config import settings
 from app.database import Base, engine
 from app.models import User
 from app.models.base import utcnow
+
+logger = logging.getLogger("app.backup")
 
 
 class EmailNotConfigured(RuntimeError):
@@ -48,10 +55,8 @@ def snapshot_bytes() -> bytes:
         with open(target, "rb") as f:
             return f.read()
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(target)
-        except OSError:
-            pass
 
 
 def backup_filename() -> str:
@@ -118,30 +123,61 @@ def restore_database(content: bytes) -> list[str]:
         raise
     finally:
         con.close()
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
 
 
-def send_backup_email(recipients: list[str], data: bytes, filename: str, note: str | None) -> None:
-    if not settings.smtp_host:
-        raise EmailNotConfigured(
-            "SMTP is not configured. Set SMTP_HOST / SMTP_USER / SMTP_PASSWORD in backend/.env."
-        )
-
-    msg = EmailMessage()
-    msg["Subject"] = f"IM-Telligence database backup — {filename}"
-    msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = ", ".join(recipients)
-    msg.set_content(
+def _email_body(note: str | None) -> str:
+    return (
         (note.strip() + "\n\n" if note else "")
         + "Attached is a full IM-Telligence database backup (.db).\n"
         + "This file contains all platform data — store it securely."
     )
-    msg.add_attachment(
-        data, maintype="application", subtype="octet-stream", filename=filename
+
+
+# An optional email attachment as (filename, raw bytes).
+Attachment = tuple[str, bytes]
+
+
+def _send_via_resend(
+    recipients: list[str], subject: str, text: str, attachment: Attachment | None
+) -> None:
+    payload: dict = {
+        "from": settings.resend_from,
+        "to": recipients,
+        "subject": subject,
+        "text": text,
+    }
+    if attachment is not None:
+        filename, data = attachment
+        payload["attachments"] = [
+            {"filename": filename, "content": base64.b64encode(data).decode()}
+        ]
+    resp = httpx.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=60,
     )
+    resp.raise_for_status()
+
+
+def _send_via_smtp(
+    recipients: list[str], subject: str, text: str, attachment: Attachment | None
+) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = settings.smtp_from or settings.smtp_user
+    msg["To"] = ", ".join(recipients)
+    msg.set_content(text)
+    if attachment is not None:
+        filename, data = attachment
+        msg.add_attachment(
+            data, maintype="application", subtype="octet-stream", filename=filename
+        )
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
         if settings.smtp_tls:
@@ -149,3 +185,47 @@ def send_backup_email(recipients: list[str], data: bytes, filename: str, note: s
         if settings.smtp_user:
             server.login(settings.smtp_user, settings.smtp_password)
         server.send_message(msg)
+
+
+def send_email(
+    recipients: list[str],
+    subject: str,
+    text: str,
+    attachment: Attachment | None = None,
+) -> None:
+    """Send an email. Prefers Resend (production); if Resend is unconfigured or
+    its send fails, falls back to SMTP (e.g. Gmail) when that is configured."""
+    if settings.resend_api_key:
+        try:
+            _send_via_resend(recipients, subject, text, attachment)
+            return
+        except Exception:
+            if not settings.smtp_host:
+                raise
+            logger.warning("Resend send failed; falling back to SMTP.", exc_info=True)
+
+    if not settings.smtp_host:
+        raise EmailNotConfigured(
+            "Email is not configured. Set RESEND_API_KEY (recommended) or "
+            "SMTP_HOST / SMTP_USER / SMTP_PASSWORD in backend/.env."
+        )
+    _send_via_smtp(recipients, subject, text, attachment)
+
+
+def send_backup_email(recipients: list[str], data: bytes, filename: str, note: str | None) -> None:
+    """Email a full DB backup as a .db attachment (Resend → SMTP fallback)."""
+    send_email(
+        recipients,
+        f"IM-Telligence database backup — {filename}",
+        _email_body(note),
+        attachment=(filename, data),
+    )
+
+
+def email_backup_now(recipients: list[str], note: str | None = None) -> str:
+    """Snapshot the DB and email it in one step. Returns the backup filename.
+    Used by both the manual endpoint and the scheduled daily job."""
+    data = snapshot_bytes()
+    filename = backup_filename()
+    send_backup_email(recipients, data, filename, note)
+    return filename

@@ -6,6 +6,7 @@ ground on lessons actually assigned to them.
 from __future__ import annotations
 
 import json
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -16,13 +17,23 @@ from app.database import get_db
 from app.deps import get_current_user, require_capability, require_roles
 from app.models import Lesson, LessonAssignment, User
 from app.models.enums import Role
-from app.schemas.ai import AdminChatRequest, AIChatRequest, AIChatResponse, AIHealth
+from app.schemas.ai import (
+    AdminChatRequest,
+    AIChatRequest,
+    AIChatResponse,
+    AIHealth,
+    AIUsageStats,
+)
+from app.services.ai_usage import record_ai_usage, usage_stats
 from app.services.lesson_access import is_lesson_available
 from app.services.llm import ChatMessage, get_provider
 from app.services.pdf_text import lesson_context
+from app.services.report_docx import build_school_ai_report
 from app.services.school_context import build_school_context
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # The exact sentence the assistant must use whenever a request is out of scope.
 REFUSAL = "I can only assist you with information related to the lessons."
@@ -121,6 +132,15 @@ def health(_: User = Depends(get_current_user)) -> AIHealth:
     )
 
 
+@router.get("/usage", response_model=AIUsageStats)
+def usage(
+    db: Session = Depends(get_db),
+    current: User = Depends(require_roles(Role.super_admin, Role.school_admin)),
+) -> AIUsageStats:
+    # Super-admins see every school; school-admins only their own (scoped in the service).
+    return AIUsageStats(**usage_stats(db, current))
+
+
 @router.post("/chat", response_model=AIChatResponse)
 def chat(
     payload: AIChatRequest,
@@ -128,14 +148,15 @@ def chat(
     current: User = Depends(require_capability("use-ai-assistant")),
 ) -> AIChatResponse:
     system, messages, source_ref = _build_prompt(db, current, payload)
+    record_ai_usage(db, current, "teacher")
     provider = get_provider()
     try:
         content = provider.chat(system, messages)
-    except Exception:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI assistant is unavailable right now. Please try again.",
-        )
+        ) from exc
     return AIChatResponse(content=content, source_ref=source_ref, provider=provider.name)
 
 
@@ -147,6 +168,7 @@ def chat_stream(
 ) -> StreamingResponse:
     # Everything DB-bound is resolved before the generator runs.
     system, messages, source_ref = _build_prompt(db, current, payload)
+    record_ai_usage(db, current, "teacher")
     provider = get_provider()
 
     def event_stream():
@@ -209,6 +231,7 @@ def admin_chat_stream(
     current: User = Depends(require_roles(Role.school_admin)),
 ) -> StreamingResponse:
     system, messages, school_name = _build_admin_prompt(db, current, payload)
+    record_ai_usage(db, current, "admin")
     provider = get_provider()
 
     def event_stream():
@@ -224,4 +247,52 @@ def admin_chat_stream(
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# --------------------------------------------------------------------------- #
+# School-admin report — the assistant writes a narrative from the school's live
+# data, rendered into a downloadable Word (.docx) alongside the data tables.
+# --------------------------------------------------------------------------- #
+_REPORT_SYSTEM = (
+    "You are IM-Telligence, writing a concise, professional report on a school for "
+    "its principal. Using ONLY the SCHOOL DATA provided, write a clear narrative "
+    "report. Structure it with these markdown headings, in this order:\n"
+    "## Overview\n## Teacher Engagement\n## Lesson Progress\n"
+    "## Risks & Late Lessons\n## Security\n## Recommendations\n"
+    "Use short paragraphs and '- ' bullet points. Cite concrete numbers from the "
+    "data. Never invent figures. Keep the whole report under 500 words."
+)
+
+_REPORT_FALLBACK = (
+    "## Overview\nThe automated narrative is unavailable right now, but the data "
+    "tables below reflect your school's current status."
+)
+
+
+@router.post("/admin/report")
+def admin_report(
+    db: Session = Depends(get_db),
+    current: User = Depends(require_roles(Role.school_admin)),
+) -> StreamingResponse:
+    if not current.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No school on account"
+        )
+
+    context, _ = build_school_context(db, current)
+    system = f"{_REPORT_SYSTEM}\n\n<SCHOOL DATA>\n{context}\n</SCHOOL DATA>"
+    provider = get_provider()
+    try:
+        narrative = provider.chat(
+            system, [{"role": "user", "content": "Write the school report now."}]
+        )
+    except Exception:
+        narrative = _REPORT_FALLBACK
+
+    record_ai_usage(db, current, "admin")
+    buf, filename = build_school_ai_report(db, current.school_id, current.name, narrative)
+    disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return StreamingResponse(
+        buf, media_type=DOCX_MEDIA, headers={"Content-Disposition": disposition}
     )

@@ -1,6 +1,17 @@
+# Dependencies / build artifacts (match at any depth: frontend/, backend/, …)
 node_modules
 .next
 out
+*.tsbuildinfo
+
+# Secrets & env
 .env*
+
+# Python
+.venv
+__pycache__
+*.pyc
+
+# Misc
 .DS_Store
 *.log

@@ -103,6 +103,45 @@ def update_status(
     return user
 
 
+def _apply_email_change(db: Session, user: User, user_id: str, data: dict) -> None:
+    if data.get("email") is None:
+        return
+    new_email = data["email"].lower()
+    clash = db.scalar(select(User).where(User.email == new_email, User.id != user_id))
+    if clash:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+    user.email = new_email
+
+
+def _apply_role_and_school(db: Session, user: User, data: dict) -> Role:
+    """Apply a role change (if any) and reconcile the school link, returning the
+    effective role. Super-admins never have a school; other roles may set one."""
+    if data.get("role") is not None:
+        user.role = data["role"]
+    effective_role = data.get("role", user.role)
+    if effective_role == Role.super_admin:
+        user.school_id = None
+    elif "school_id" in data:
+        if data["school_id"] is not None and db.get(School, data["school_id"]) is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="School not found")
+        user.school_id = data["school_id"]
+    return effective_role
+
+
+def _apply_teacher_fields(
+    user: User, payload: UserUpdate, data: dict, effective_role: Role
+) -> None:
+    """Grades and language only apply to teachers; clear them for other roles."""
+    if effective_role != Role.teacher:
+        user.grades = []
+        user.language = None
+        return
+    if "grades" in data and data["grades"] is not None:
+        user.grades = data["grades"]
+    if "language" in data and payload.language is not None:
+        user.language = payload.language.value
+
+
 @router.patch("/{user_id}", response_model=UserOut)
 def update_user(
     user_id: str,
@@ -118,35 +157,9 @@ def update_user(
 
     if data.get("name") is not None:
         user.name = data["name"].strip()
-
-    if data.get("email") is not None:
-        new_email = data["email"].lower()
-        clash = db.scalar(select(User).where(User.email == new_email, User.id != user_id))
-        if clash:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
-        user.email = new_email
-
-    if data.get("role") is not None:
-        user.role = data["role"]
-
-    # Resolve the effective role to decide whether a school is required/allowed.
-    effective_role = data.get("role", user.role)
-    if effective_role == Role.super_admin:
-        user.school_id = None
-    elif "school_id" in data:
-        if data["school_id"] is not None and db.get(School, data["school_id"]) is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="School not found")
-        user.school_id = data["school_id"]
-
-    # Grades and language only apply to teachers; clear them for other roles.
-    if effective_role != Role.teacher:
-        user.grades = []
-        user.language = None
-    else:
-        if "grades" in data and data["grades"] is not None:
-            user.grades = data["grades"]
-        if "language" in data and payload.language is not None:
-            user.language = payload.language.value
+    _apply_email_change(db, user, user_id, data)
+    effective_role = _apply_role_and_school(db, user, data)
+    _apply_teacher_fields(user, payload, data, effective_role)
 
     # Re-sync rule-based assignments to the teacher's current grades/language:
     # add newly-matching lessons, and strip untouched ones that no longer match.

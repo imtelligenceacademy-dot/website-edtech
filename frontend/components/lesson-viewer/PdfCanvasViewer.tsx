@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ZoomIn, ZoomOut, Loader2, FileWarning, Check, BookmarkCheck } from "lucide-react";
+import { ZoomIn, ZoomOut, Loader2, FileWarning, Check, BookmarkCheck, ArrowLeft } from "lucide-react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { fetchLessonPdf, saveLessonProgress } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -14,11 +14,15 @@ export function PdfCanvasViewer({
   lessonId,
   light = false,
   accessStatus,
+  onExit,
+  onCompleted,
 }: {
   fileId: string;
   lessonId?: string;
   light?: boolean;
   accessStatus?: string | null;
+  onExit?: () => void; // return to the lesson list
+  onCompleted?: () => void; // fired after the lesson is marked complete
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
@@ -141,7 +145,10 @@ export function PdfCanvasViewer({
           ? "Marked complete — 100%"
           : `Saved — stopped at slide ${current} (${p.percentComplete}%)`
       );
-      if (complete || p.percentComplete >= 100) setDone(true);
+      if (complete || p.percentComplete >= 100) {
+        setDone(true);
+        onCompleted?.();
+      }
     } catch {
       setSaved("Couldn't save progress.");
     } finally {
@@ -188,9 +195,19 @@ export function PdfCanvasViewer({
             </span>
           )}
           {done ? (
-            <span className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700">
-              <BookmarkCheck size={13} /> Lesson completed
-            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700">
+                <BookmarkCheck size={13} /> Lesson completed
+              </span>
+              {onExit && (
+                <button
+                  onClick={onExit}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-brand to-brand-700 px-3 py-1.5 text-white shadow-lg shadow-brand/30 transition hover:brightness-110"
+                >
+                  <ArrowLeft size={13} /> Back to lessons
+                </button>
+              )}
+            </div>
           ) : (
             <div className="ml-auto flex items-center gap-2">
               <button

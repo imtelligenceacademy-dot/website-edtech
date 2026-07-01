@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_DEFAULT_SECRET = "change-me-in-production"
@@ -65,13 +65,34 @@ class Settings(BaseSettings):
     ai_max_context_chars: int = 24000
     ai_timeout_seconds: int = 30
 
-    # --- SMTP (for emailing the DB backup) -------------------------------- #
+    # --- Email delivery for DB backups ------------------------------------ #
+    # Resend (https://resend.com) is preferred for production. If a Resend API
+    # key is set, backups are emailed via Resend; otherwise the app falls back
+    # to the SMTP settings below (e.g. Gmail), so SMTP stays a working backup.
+    resend_api_key: str = ""
+    # Sender address. For production set a verified-domain address; Resend's
+    # shared "onboarding@resend.dev" works for testing to the account owner.
+    resend_from: str = "onboarding@resend.dev"
+
+    # --- SMTP (fallback for emailing the DB backup) ----------------------- #
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_tls: bool = True
+
+    # --- Automated daily database backup ---------------------------------- #
+    # When enabled, the server emails a full DB backup to backup_email_to every
+    # backup_interval_hours, using the email provider resolved above.
+    backup_email_enabled: bool = False
+    backup_email_to: str = ""
+    backup_interval_hours: int = 24
+
+    # --- Admin notifications ---------------------------------------------- #
+    # Where teacher lesson-access requests are emailed. If empty, the app falls
+    # back to the email addresses of all super-admin accounts.
+    admin_email: str = ""
 
     @property
     def is_production(self) -> bool:

@@ -4,8 +4,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Role, Session } from "@/types";
 import { getSession } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import { useSchoolAdminTheme } from "@/lib/schoolAdminTheme";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -17,8 +15,6 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   const router = useRouter();
-  const { theme } = useSchoolAdminTheme();
-  const dark = theme === "dark";
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -52,19 +48,7 @@ export function DashboardShell({
   }
 
   return (
-    <div
-      className={cn(
-        "relative min-h-screen flex overflow-hidden",
-        dark ? "bg-slate-950" : "bg-slate-50"
-      )}
-    >
-      {dark && (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="aurora-blob absolute -top-32 left-40 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
-          <div className="aurora-blob delay-1 absolute top-1/3 right-0 h-96 w-96 rounded-full bg-brand-700/15 blur-3xl" />
-          <div className="aurora-blob delay-2 absolute -bottom-32 left-1/2 h-96 w-96 rounded-full bg-sky-500/15 blur-3xl" />
-        </div>
-      )}
+    <div className="relative min-h-screen flex overflow-hidden bg-slate-50">
       <div className="relative z-10 flex w-full">
       <Sidebar role={role} />
       {navigationOpen && (
@@ -105,19 +89,11 @@ export function PageHeader({
   subtitle?: string;
   actions?: ReactNode;
 }) {
-  const { theme } = useSchoolAdminTheme();
-  const dark = theme === "dark";
   return (
     <div className="mb-6 flex items-end justify-between gap-4">
       <div>
-        <h1 className={cn("text-xl font-semibold", dark ? "text-white" : "text-slate-900")}>
-          {title}
-        </h1>
-        {subtitle && (
-          <p className={cn("text-sm mt-1", dark ? "text-slate-400" : "text-slate-500")}>
-            {subtitle}
-          </p>
-        )}
+        <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+        {subtitle && <p className="text-sm mt-1 text-slate-500">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>

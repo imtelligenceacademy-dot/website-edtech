@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Eye, FileText, Loader2, RefreshCcw } from "lucide-react";
+import { Download, Eye, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { formatDate, cn } from "@/lib/utils";
-import { useSchoolAdminTheme } from "@/lib/schoolAdminTheme";
 import { downloadReport as downloadWordReport, listReports } from "@/lib/api";
 import type { Report, ReportStatus } from "@/types";
 
@@ -27,15 +26,15 @@ export function ReportSection({
   scope: "global" | "school";
   schoolId?: string;
 }) {
-  const { theme } = useSchoolAdminTheme();
-  const dark = theme === "dark";
-  const muted = dark ? "text-slate-400" : "text-slate-500";
-  const strong = dark ? "text-white" : "text-slate-900";
+  const dark = false;
+  const muted = "text-slate-500";
+  const strong = "text-slate-900";
 
   const [reports, setReports] = useState<Report[]>([]);
   const [viewing, setViewing] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   async function handleDownloadWord() {
@@ -82,37 +81,23 @@ export function ReportSection({
     );
   }
 
-  function downloadReport(report: Report) {
-    downloadFile(
-      `${report.id}.txt`,
-      [
-        report.title,
-        `Scope: ${report.scope}`,
-        `Status: ${report.status}`,
-        `Requested: ${formatDate(report.requestedAt)}`,
-        report.readyAt ? `Ready: ${formatDate(report.readyAt)}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      "text/plain"
-    );
-  }
-
-  function markReady(id: string) {
-    setReports((prev) =>
-      prev.map((r) =>
-        r.id === id ? { ...r, status: "ready", readyAt: new Date().toISOString() } : r
-      )
-    );
-  }
-
-  function retry(id: string) {
-    setReports((prev) =>
-      prev.map((report) =>
-        report.id === id ? { ...report, status: "processing" } : report
-      )
-    );
-    setTimeout(() => markReady(id), 1200);
+  // Downloads the real server-generated Word report scoped to this row:
+  // school-admins get their own school; super-admins get the report's school
+  // (or the whole platform when the report isn't tied to one school).
+  async function downloadRow(report: Report) {
+    setDownloadError(null);
+    setDownloadingId(report.id);
+    try {
+      if (scope === "school") {
+        await downloadWordReport("school");
+      } else {
+        await downloadWordReport("super", report.schoolId ?? undefined);
+      }
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : "Download failed.");
+    } finally {
+      setDownloadingId(null);
+    }
   }
 
   return (
@@ -172,32 +157,19 @@ export function ReportSection({
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {r.status === "ready" && (
-                        <div className="inline-flex gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => setViewing(r)}>
-                            <Eye size={12} /> View
-                          </Button>
-                          <Button size="sm" onClick={() => downloadReport(r)}>
-                            <Download size={12} /> Download
-                          </Button>
-                        </div>
-                      )}
-                      {r.status === "processing" && (
+                      <div className="inline-flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => setViewing(r)}>
+                          <Eye size={12} /> View
+                        </Button>
                         <Button
                           size="sm"
-                          variant="ghost"
-                          onClick={() => markReady(r.id)}
-                          title="Simulate completion"
+                          onClick={() => downloadRow(r)}
+                          disabled={downloadingId === r.id}
                         >
-                          <RefreshCcw size={12} />
-                          Mark ready
+                          <Download size={12} />
+                          {downloadingId === r.id ? "Preparing…" : "Download"}
                         </Button>
-                      )}
-                      {r.status === "failed" && (
-                        <Button size="sm" variant="secondary" onClick={() => retry(r.id)}>
-                          <RefreshCcw size={12} /> Retry
-                        </Button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -220,8 +192,9 @@ export function ReportSection({
         title={viewing?.title ?? "Report"}
         footer={
           viewing ? (
-            <Button onClick={() => downloadReport(viewing)}>
-              <Download size={14} /> Download
+            <Button onClick={() => downloadRow(viewing)} disabled={downloadingId === viewing.id}>
+              <Download size={14} />
+              {downloadingId === viewing.id ? "Preparing…" : "Download"}
             </Button>
           ) : undefined
         }

@@ -33,3 +33,9 @@ class AIHealth(CamelModel):
     provider: str
     model: str | None = None
     ready: bool  # False when falling back to the no-key mock
+
+
+class AIUsageStats(CamelModel):
+    last7: int  # interactions in the last 7 days
+    prev7: int  # interactions in the 7 days before that
+    delta_pct: int | None = None  # week-over-week change, None with no baseline

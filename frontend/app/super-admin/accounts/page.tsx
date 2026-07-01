@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Plus, X, Ban, Pencil, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
+import { Check, Plus, X, Ban, Pencil, Trash2, ArrowLeft, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { PageHeader } from "@/components/layout/DashboardShell";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -20,7 +20,7 @@ import {
 } from "@/lib/api";
 import { gradeLabel } from "@/lib/grades";
 import type { School, User, UserStatus } from "@/types";
-import { cn, formatDateOnly } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const statusTone: Record<UserStatus, Parameters<typeof Badge>[0]["tone"]> = {
   active: "success",
@@ -75,6 +75,7 @@ export default function AccountsPage() {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [deleting, setDeleting] = useState<User | null>(null);
 
@@ -117,6 +118,7 @@ export default function AccountsPage() {
   function closeModal() {
     setEditing(null);
     setStep("details");
+    setShowPassword(false);
   }
 
   async function persist() {
@@ -407,15 +409,26 @@ export default function AccountsPage() {
               </label>
               <label className="block text-xs font-medium text-slate-700">
                 {isNew ? "Temporary password" : "New password"}
-                <input
-                  required={isNew}
-                  type="password"
-                  minLength={8}
-                  value={draft.password}
-                  placeholder={isNew ? "" : "Leave blank to keep current"}
-                  onChange={(e) => setDraft((v) => ({ ...v, password: e.target.value }))}
-                  className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-                />
+                <div className="relative mt-1">
+                  <input
+                    required={isNew}
+                    type={showPassword ? "text" : "password"}
+                    minLength={8}
+                    value={draft.password}
+                    placeholder={isNew ? "" : "Leave blank to keep current"}
+                    onChange={(e) => setDraft((v) => ({ ...v, password: e.target.value }))}
+                    className="h-10 w-full rounded-lg border border-slate-300 px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
                 {!isNew && (
                   <span className="mt-1 block text-[11px] font-normal text-slate-500">
                     The current password can&apos;t be shown — it&apos;s stored only as a

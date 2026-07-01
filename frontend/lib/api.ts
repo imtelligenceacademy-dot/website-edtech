@@ -324,6 +324,18 @@ export function aiHealth() {
   );
 }
 
+export type AIUsageStats = {
+  last7: number;
+  prev7: number;
+  deltaPct: number | null;
+};
+
+// AI-assistant interaction counts, scoped to the caller's school (super-admins
+// see all schools). Powers the dashboard "AI usage (7d)" metric.
+export function getAIUsage() {
+  return apiFetch<AIUsageStats>("/api/ai/usage");
+}
+
 type StreamHandlers = {
   onDelta: (text: string) => void;
   onMeta?: (m: { sourceRef?: string }) => void;
@@ -395,6 +407,37 @@ export function streamAdminAI(
   handlers: StreamHandlers
 ): Promise<void> {
   return streamSSE("/api/ai/admin/chat/stream", payload, handlers);
+}
+
+// Asks the school-admin assistant to author a narrative report from the school's
+// live data and downloads it as a Word (.docx) file. One auth-refresh retry.
+export async function downloadSchoolAIReport(retried = false): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/ai/admin/report`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (res.status === 401 && !retried) {
+    const refreshed = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (refreshed.ok) return downloadSchoolAIReport(true);
+  }
+  if (!res.ok) throw new Error("Could not generate the report.");
+
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+  const filename = m ? decodeURIComponent(m[1]) : "IM-Telligence AI Report.docx";
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export function listReports() {

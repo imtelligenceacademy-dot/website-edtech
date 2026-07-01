@@ -10,8 +10,6 @@ import {
   ShieldCheck,
   FileBarChart2,
   KeyRound,
-  Home,
-  BookOpen,
   Sparkles,
   TrendingUp,
   AlertTriangle,

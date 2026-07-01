@@ -2,7 +2,6 @@
 
 import { Badge } from "@/components/ui/Badge";
 import { formatDate, cn } from "@/lib/utils";
-import { useSchoolAdminTheme } from "@/lib/schoolAdminTheme";
 import type { SecurityEventType, SecurityLog } from "@/types";
 
 const eventLabel: Record<SecurityEventType, string> = {
@@ -23,10 +22,9 @@ const statusTone: Record<
 };
 
 export function SecurityLogTable({ logs }: { logs: SecurityLog[] }) {
-  const { theme } = useSchoolAdminTheme();
-  const dark = theme === "dark";
-  const muted = dark ? "text-slate-400" : "text-slate-500";
-  const strong = dark ? "text-white" : "text-slate-900";
+  const dark = false;
+  const muted = "text-slate-500";
+  const strong = "text-slate-900";
 
   return (
     <div

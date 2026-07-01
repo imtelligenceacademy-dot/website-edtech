@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user, require_capability, require_roles
 from app.models import Report, User
-from app.models.enums import ReportScope, Role
+from app.models.enums import ReportScope, ReportStatus, Role
 from app.schemas.report import ReportCreate, ReportOut
 from app.services.report_docx import build_school_report, build_super_report
 from app.utils import new_id
@@ -80,12 +81,16 @@ def request_report(
                 detail="School admins cannot request global reports",
             )
 
+    # Reports are generated on demand at download time, so a request is
+    # immediately fulfillable — mark it ready rather than leaving it "pending".
     report = Report(
         id=new_id("rep"),
         title=payload.title.strip(),
         scope=payload.scope,
         school_id=school_id,
         requested_by=current.id,
+        status=ReportStatus.ready,
+        ready_at=datetime.now(timezone.utc),
     )
     db.add(report)
     db.commit()

@@ -106,12 +106,15 @@ def compute_access(db: Session, teacher: User) -> dict[str, LessonAccess]:
             override = bool(p and p.unlocked_override)
             completed = bool(p and p.status == LessonStatus.completed)
 
-            if completed:
-                # Locked once done — unless an admin reopened it. The next
-                # lesson's gate opens only after the wait elapses.
+            # Only a genuinely completed lesson (locked, NOT reopened) starts the
+            # countdown for the next lesson. A completed lesson an admin has
+            # reopened is treated below as the teacher's active lesson instead —
+            # so the next lesson's countdown does not run until this one is
+            # actually finished again.
+            if completed and not override:
                 out[lesson.id] = LessonAccess(
-                    status=AVAILABLE if override else COMPLETED,
-                    message=None if override else "Completed — ask your admin to reopen it.",
+                    status=COMPLETED,
+                    message="Completed — ask your admin to reopen it.",
                 )
                 completed_at = p.completed_at if p else None
                 if completed_at is not None:
@@ -124,7 +127,10 @@ def compute_access(db: Session, teacher: User) -> dict[str, LessonAccess]:
                     pending_unlock_at = None
                 continue
 
-            # First non-completed lesson in the track decides the rest.
+            # The teacher's active lesson: the first not-completed lesson, or a
+            # completed one an admin reopened (override). Either way it consumes
+            # the gate — nothing after it opens or counts down until it is
+            # (re)completed.
             if override or gate_open:
                 out[lesson.id] = LessonAccess(status=AVAILABLE)
             elif pending_unlock_at is not None:

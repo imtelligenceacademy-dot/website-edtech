@@ -12,6 +12,7 @@ from app.models.enums import (
     WatchdogStatus,
 )
 from app.models.access_request import AccessRequest
+from app.models.ai_usage import AiUsage
 from app.models.lesson import Lesson, LessonAssignment, Slide
 from app.models.progress import Progress
 from app.models.report import Report
@@ -39,6 +40,7 @@ __all__ = [
     "AccessRequest",
     "Progress",
     "Report",
+    "AiUsage",
     "SecurityLog",
     "RefreshToken",
     "UploadedFile",

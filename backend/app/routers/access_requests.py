@@ -8,25 +8,58 @@ granting flips the matching ``Progress.unlocked_override`` so the lesson opens.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
-from app.deps import get_current_user, require_capability, require_roles
+from app.deps import require_capability, require_roles
 from app.models import AccessRequest, Lesson, LessonAssignment, Progress, User
 from app.models.enums import Role
 from app.schemas.access_request import AccessRequestCreate, AccessRequestOut
+from app.services.backup import send_email
 from app.services.lesson_access import is_lesson_available
 from app.utils import new_id
+
+logger = logging.getLogger("app.access_requests")
 
 router = APIRouter(prefix="/api/access-requests", tags=["access-requests"])
 
 PENDING = "pending"
 GRANTED = "granted"
 DENIED = "denied"
+
+
+def _admin_recipients(db: Session) -> list[str]:
+    """Who to notify about a new access request: the configured admin email, or
+    (if unset) every super-admin's email."""
+    if settings.admin_email:
+        return [settings.admin_email]
+    return [
+        u.email
+        for u in db.scalars(select(User).where(User.role == Role.super_admin))
+        if u.email
+    ]
+
+
+def _notify_access_request(recipients: list[str], teacher: User, lesson: Lesson, note: str | None) -> None:
+    """Best-effort email to admins about a teacher's access request. Runs in a
+    background task, so a mail failure never breaks the teacher's request."""
+    subject = f"IM-Telligence — lesson access request from {teacher.name}"
+    text = (
+        f"{teacher.name} ({teacher.email}) has requested access to a locked lesson:\n\n"
+        f"  {lesson.title} (Grade {lesson.grade})\n\n"
+        + (f'Their note: "{note.strip()}"\n\n' if note else "")
+        + "Review and grant or deny it in IM-Telligence under Access Control."
+    )
+    try:
+        send_email(recipients, subject, text)
+    except Exception:
+        logger.warning("Could not email the access-request notification.", exc_info=True)
 
 
 def _to_out(req: AccessRequest, lesson: Lesson | None, teacher: User | None) -> AccessRequestOut:
@@ -48,6 +81,7 @@ def _to_out(req: AccessRequest, lesson: Lesson | None, teacher: User | None) -> 
 @router.post("", response_model=AccessRequestOut, status_code=status.HTTP_201_CREATED)
 def create_request(
     payload: AccessRequestCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current: User = Depends(require_capability("view-assigned-lessons")),
 ) -> AccessRequestOut:
@@ -95,6 +129,14 @@ def create_request(
     db.add(req)
     db.commit()
     db.refresh(req)
+
+    # Email the admin(s) that a new request came in (best-effort, non-blocking).
+    recipients = _admin_recipients(db)
+    if recipients:
+        background_tasks.add_task(
+            _notify_access_request, recipients, current, lesson, payload.note
+        )
+
     return _to_out(req, lesson, current)
 
 

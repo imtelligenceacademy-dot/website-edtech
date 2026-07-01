@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import Field
 
 from app.schemas.base import CamelModel
@@ -19,6 +21,7 @@ class SchoolOut(CamelModel):
     city: str
     teacher_count: int = 0
     admin_count: int = 0
+    created_at: datetime | None = None
 
 
 class SchoolCreate(CamelModel):

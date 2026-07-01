@@ -7,6 +7,9 @@ Interactive docs: http://localhost:8000/docs
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -15,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.database import Base, engine, ensure_added_columns
+from app.services.backup import email_backup_now
 from app.routers import (
     access_requests,
     ai,
@@ -33,6 +37,24 @@ from app.routers import (
 # Import models so they register on Base.metadata before create_all.
 import app.models  # noqa: F401
 
+logger = logging.getLogger("app")
+
+
+async def _daily_backup_loop() -> None:
+    """Email a full DB backup to the configured recipient every N hours.
+    The blocking snapshot + send runs in a worker thread so the event loop
+    (i.e. the API) is never blocked."""
+    interval = max(1, settings.backup_interval_hours) * 3600
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            filename = await asyncio.to_thread(
+                email_backup_now, [settings.backup_email_to], "Automated daily backup."
+            )
+            logger.info("Daily backup emailed to %s (%s)", settings.backup_email_to, filename)
+        except Exception:
+            logger.exception("Daily backup email failed")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,7 +62,23 @@ async def lifespan(app: FastAPI):
     # Dev convenience: ensure tables exist. Production should use Alembic migrations.
     Base.metadata.create_all(bind=engine)
     ensure_added_columns()
-    yield
+
+    backup_task: asyncio.Task | None = None
+    if settings.backup_email_enabled and settings.backup_email_to:
+        backup_task = asyncio.create_task(_daily_backup_loop())
+        logger.info(
+            "Daily backup scheduler started: every %sh to %s",
+            settings.backup_interval_hours,
+            settings.backup_email_to,
+        )
+
+    try:
+        yield
+    finally:
+        if backup_task is not None:
+            backup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await backup_task
 
 
 app = FastAPI(

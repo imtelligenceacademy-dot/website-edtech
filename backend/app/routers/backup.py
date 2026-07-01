@@ -61,12 +61,12 @@ def email_db(
     try:
         send_backup_email(recipients, data, filename, payload.note)
     except EmailNotConfigured as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to send the backup email. Check the SMTP settings and try again.",
-        )
+        ) from exc
     return MessageResponse(
         message=f"Backup emailed to {len(recipients)} recipient(s): {', '.join(recipients)}"
     )
@@ -89,11 +89,11 @@ def wipe_db(
     db.rollback()  # release the session's read lock before the write
     try:
         wipe_database(keep)
-    except Exception:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to wipe the database.",
-        )
+        ) from exc
     return MessageResponse(
         message="Database wiped. All data was cleared; your super-admin account was kept."
     )
@@ -112,12 +112,12 @@ async def restore_db(
     try:
         restored = restore_database(content)
     except InvalidBackup as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to restore the database. The file may be incompatible.",
-        )
+        ) from exc
     return MessageResponse(
         message=(
             f"Database restored from backup ({len(restored)} tables). "
