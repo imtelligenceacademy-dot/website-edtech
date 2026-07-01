@@ -42,5 +42,17 @@ def set_refresh_cookie(response: Response, token: str) -> None:
 
 
 def clear_auth_cookies(response: Response) -> None:
-    response.delete_cookie(ACCESS_COOKIE_NAME, path="/")
-    response.delete_cookie(REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH)
+    # Deletion must repeat the Secure/SameSite attributes, or browsers reject the
+    # clearing of a SameSite=None; Secure cookie (so logout wouldn't stick).
+    response.delete_cookie(
+        ACCESS_COOKIE_NAME,
+        path="/",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+    )
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+    )

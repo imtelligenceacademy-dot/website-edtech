@@ -17,8 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.database import Base, engine, ensure_added_columns
+from app.database import Base, SessionLocal, engine, ensure_added_columns
 from app.services.backup import email_backup_now
+from app.services.bootstrap import ensure_bootstrap_admin
 from app.routers import (
     access_requests,
     ai,
@@ -62,6 +63,10 @@ async def lifespan(app: FastAPI):
     # Dev convenience: ensure tables exist. Production should use Alembic migrations.
     Base.metadata.create_all(bind=engine)
     ensure_added_columns()
+
+    # Seed the first super-admin on a fresh DB (no-op once one exists).
+    with SessionLocal() as db:
+        ensure_bootstrap_admin(db)
 
     backup_task: asyncio.Task | None = None
     if settings.backup_email_enabled and settings.backup_email_to:

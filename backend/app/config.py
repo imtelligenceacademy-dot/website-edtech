@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # back to the email addresses of all super-admin accounts.
     admin_email: str = ""
 
+    # --- First-run super-admin bootstrap ---------------------------------- #
+    # On startup, if there are NO super-admin accounts yet and these are set, an
+    # active super-admin is created so a fresh production DB is usable. Ignored
+    # once any super-admin exists.
+    bootstrap_admin_email: str = ""
+    bootstrap_admin_password: str = ""
+    bootstrap_admin_name: str = "Super Admin"
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
@@ -118,6 +126,10 @@ class Settings(BaseSettings):
             )
         if self.is_production and not self.cookie_secure:
             raise RuntimeError("COOKIE_SECURE must be true in production (HTTPS).")
+        # Browsers only accept SameSite=None cookies when they are also Secure —
+        # this is the cross-site setup (frontend and API on different domains).
+        if self.cookie_samesite == "none" and not self.cookie_secure:
+            raise RuntimeError("COOKIE_SAMESITE=none requires COOKIE_SECURE=true.")
 
 
 @lru_cache
